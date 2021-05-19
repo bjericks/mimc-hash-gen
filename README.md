@@ -1,7 +1,38 @@
-Chisel Project Template
+MiMC Hash Generator
 =======================
 
-You've done the [Chisel Bootcamp](https://github.com/freechipsproject/chisel-bootcamp), and now you
+This project is a Chisel generator that implements the [MiMC hash function](https://byt3bit.github.io/primesym/mimc/)
+with parameterized IO bit-width and number of rounds enacted on the input to produce the output hash. A simple modular
+multiplier performs the round function, but you may replace the multiplier with another multiplier module to further
+optimize performance.
+
+To test the functionality of the MiMC hash generator, simply run the included tests with
+```sh
+sbt test
+```
+
+## Project Components
+
+### MiMC Model
+
+A Scala implementation of the MiMC hash function was created to compare with the Chisel implementation for testing.
+The MiMC model is loosely based on an existing [Python implementation](https://wordpress-434650-1388715.cloudwaysapps.com/developers-community/hash-challenge/hash-challenge-implementation-reference-code/#marvellous) of the MiMC hash function.
+
+### Modular Multiplier
+
+A standard IO is implemented in the modular multiplier to facilitate interfacing with the hash generator:
+* (a, b): Input(UInt): The arguments for multiplication
+* out: Valid(UInt): The result of modular multiplication (a * b % m). The modulus is set within a parameter of the module.
+The "valid" output signals when the operation is complete to facilitate multi-cycle multipliers.
+
+The current implementation uses Chisel operators to calculate the result. Future implementations may apply more complex
+multiplication algorithms to improve performace.
+
+### MiMC Hash Generator
+
+
+
+<!-- You've done the [Chisel Bootcamp](https://github.com/freechipsproject/chisel-bootcamp), and now you
 are ready to start your own Chisel project.  The following procedure should get you started
 with a clean running [Chisel3](https://www.chisel-lang.org/) project.
 
@@ -97,3 +128,4 @@ You are ready to go. We have a few recommended practices and things to do.
 ## Problems? Questions?
 
 Check out the [Chisel Users Community](https://www.chisel-lang.org/community.html) page for links to get in contact!
+ -->
