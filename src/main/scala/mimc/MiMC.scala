@@ -79,6 +79,7 @@ class MiMC(p: MiMCParams) extends Module {
 			mul1Result := outBits 
 			state := MiMC.mul2 
 		}
+		printf(p"Round $roundCount: xReg = $xReg\n")
 	} .elsewhen (state === MiMC.mul2) {
 		mul.io.a := mul1Result
 		mul.io.b := getSum

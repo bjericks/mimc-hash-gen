@@ -28,6 +28,7 @@ object MiMCModel {
 		
 		// var usage is very suspicious
 		var hash = x
+		println(f"Round 0: $hash%x ($hash%d)")
 		for (r <- 0 until numRounds) {
 			val currKey = if (r % 2 == 0) lower else upper
 			hash = round(hash, currKey, c(r), mod)

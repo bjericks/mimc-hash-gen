@@ -6,7 +6,7 @@ with parameterized IO bit-width and number of rounds enacted on the input to pro
 multiplier performs the round function, but you may replace the multiplier with another multiplier module to further
 optimize performance.
 
-To test the functionality of the MiMC hash generator, simply run the included tests with
+To test the functionality of the MiMC hash generator and Scala model, simply run the included tests with
 ```sh
 sbt test
 ```
@@ -40,16 +40,26 @@ where x is the plaintext to be encrypted, k is an element of the key (K1, K0) us
 
 The MiMC Hash Generator includes the following IO:
 * plaintext: Input(UInt): The n-bit plaintext to be encrypted
-* key: Input(UInt): The 2n-bit key used during encryption. The round function
-* constants: Input(Vec(UInt)): The round constants used during encryption. The number of elements required equals the number of rounds in the hash generation.
+* key: Input(UInt): The 2n-bit key used during encryption. The hash generator evenly divides the key into two n-bit subkeys (K1, K0) and alternates the subkey used with each round function call.
+* constants: Input(Vec(UInt)): The round constants used during encryption. The number of elements required equals the number of rounds in the hash generation, and the first round constant (C0) must equal 0.
 * hash: Output(UInt): The n-bit result of encryption.
 
 The hash generator currently uses a single multiplier module to carry out a single round function calculation over two clock cycles. To optimize the speed of hash generation, a second multiplier may be added to perform single-cycle round function calculation.
 
 Currently, the following characteristics are parameterizable:
-* The modulus applied in the core APN function
+* The modulus applied to the round function and multiplication
 * The bit-width of the hash generator input and output
 * The number of rounds in the hash generation
+
+## Plans for Future Implementations
+
+### Multiplier
+
+A more efficient modular multiplier for large integers (eg. Karatsuba, Toom-Cook) will replace the basic multiplier in the final version. This multiplier will include identical IO to the current multiplier to easily interface with the hash generator.
+
+### Parameterized Rounds per Cycle (or Cycles per Round)
+
+A single multiplier carries out the round function in the current hash generator at a rate of two cycles per round. I would like to add the option to generate more multipliers to carry out one or more rounds per cycle if desired.
 
 ## Known Issues
 

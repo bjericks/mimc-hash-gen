@@ -67,4 +67,11 @@ class MiMCTester extends FreeSpec with ChiselScalatestTester {
 		val key = BigInt(2*width, new Random())
 		doMiMCTest(inp, key, mod, width, 5)
 	}
+	"MiMC should produce correct hash in 10 rounds with random input and key" in {
+		val width = 16
+		val mod = 65536
+		val inp = BigInt(width, new Random())
+		val key = BigInt(2*width, new Random())
+		doMiMCTest(inp, key, mod, width, 10)
+	}
 }
