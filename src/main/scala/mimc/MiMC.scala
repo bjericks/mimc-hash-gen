@@ -3,9 +3,7 @@ package mimc
 import chisel3._
 import chisel3.util._
 
-case class MiMCParams(mod: Int, width: Int, numRounds: Int=10) {
-	val modWidth = log2Ceil(mod)
-}
+case class MiMCParams(width: Int, numRounds: Int=10) {}
 
 /* MiMCPacket: container for MiMC input data */
 class MiMCPacket(p: MiMCParams) extends Bundle {
@@ -40,19 +38,20 @@ class MiMC(p: MiMCParams) extends Module {
 	// For large numRounds, loading to cReg can be hardware intensive
 	
 	// Modulo multiplier - Can replace with your own module!
-	val mul = Module(new ModMult(p.width, p.mod))
+	val mul = Module(new ModMult(p.width))
 
 	// Modulo multiplier IO
 	val outBits  = mul.io.out.bits
 	val outValid = mul.io.out.valid
-	mul.io.a := 0.U
-	mul.io.b := 0.U
+	mul.io.in.bits.a := 0.U
+	mul.io.in.bits.b := 0.U
 
 	// Holds intermediate result of round function multiplication
 	val mul1Result = RegInit(0.U(p.width.W))
 
 	// Current FSM state
 	val state = RegInit(MiMC.idle)
+	val mulDone = RegInit(1.B)
 
 	// Current round (counts from 0 until numRounds)
 	val roundCount = RegInit(0.U(log2Ceil(p.numRounds).W))
@@ -72,26 +71,29 @@ class MiMC(p: MiMCParams) extends Module {
 			state := MiMC.mul1
 		}
 	} .elsewhen (state === MiMC.mul1) {
-		mul.io.a := getSum
-		mul.io.b := getSum
+		mul.io.in.bits.a := getSum
+		mul.io.in.bits.b := getSum
+		mulDone := 0.B
 
-		when (outValid) {
+		when (outValid & !mulDone) {
 			mul1Result := outBits 
 			state := MiMC.mul2 
 		}
-		printf(p"Round $roundCount: xReg = $xReg\n")
 	} .elsewhen (state === MiMC.mul2) {
-		mul.io.a := mul1Result
-		mul.io.b := getSum
+		mul.io.in.bits.a := mul1Result
+		mul.io.in.bits.b := getSum
+		mulDone := 0.B
 
-		when (outValid) {
+		when (outValid & !mulDone) {
 			xReg := outBits
 
 			val last = roundCount === (p.numRounds-1).U
 			roundCount := Mux(last, 0.U, roundCount + 1.U)
 			state := Mux(last, MiMC.idle, MiMC.mul1)
+			printf(p"Round ${roundCount+1.U}: ${Hexadecimal(outBits)} ($outBits)\n")
 		}
 	}
+	mul.io.in.valid := (state === MiMC.mul1 || state === MiMC.mul2) && !outValid
 
 	// Output and Decoupled logic
 	io.hash.bits := xReg

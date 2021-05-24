@@ -16,22 +16,22 @@ object MiMCModel {
 		(k & splitMASK, (k >> width) & splitMASK)
 	}
 
-	def round(x: BigInt, k: BigInt, c: BigInt, mod: Int): BigInt = {
+	def round(x: BigInt, k: BigInt, c: BigInt, width: Int): BigInt = {
+		val mod = (BigInt(1) << width)
 		val sum = x + k + c
-		(((sum * sum) % mod) * sum) % mod 
+		(sum * sum * sum) % mod
 	}
 
-	def hashGen(x: BigInt, k: BigInt, c: Seq[BigInt], numRounds: Int, mod: Int, width: Int): BigInt = {
+	def hashGen(x: BigInt, k: BigInt, c: Seq[BigInt], numRounds: Int, width: Int): BigInt = {
 		assert(c.length == numRounds)
 		val (lower, upper) = splitKey(k, width)
 		println(f"key: upper = $upper%x, lower = $lower%x")
 		
-		// var usage is very suspicious
 		var hash = x
 		println(f"Round 0: $hash%x ($hash%d)")
 		for (r <- 0 until numRounds) {
 			val currKey = if (r % 2 == 0) lower else upper
-			hash = round(hash, currKey, c(r), mod)
+			hash = round(hash, currKey, c(r), width)
 			println(f"Round ${r+1}%d: $hash%x ($hash%d)")
 		}
 		hash

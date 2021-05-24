@@ -19,27 +19,27 @@ class MiMCModelTester extends FreeSpec with ChiselScalatestTester {
 
 	"MiMC model should single round function" in {
 		val testKey = key & BigInt("ffff", 16)
-		assert(MiMCModel.round(inp, testKey, BigInt(1), 65536) == BigInt(27))
+		assert(MiMCModel.round(inp, testKey, BigInt(1), 16) == BigInt(27))
 	}
 
 	"MiMC model should generate hash after 5 rounds" in {
-		assert(MiMCModel.hashGen(inp, key, MiMCConst.genRoundConst(5), 5, 65536, 16) == BigInt(27328))
+		assert(MiMCModel.hashGen(inp, key, MiMCConst.genRoundConst(5), 5, 16) == BigInt(27328))
 	}
 
-	"MiMC model should generate hash after 5 rounds with non-power-of-2 mod" in {
-		assert(MiMCModel.hashGen(inp, key, MiMCConst.genRoundConst(5), 5, 10000, 16) == BigInt(8336))
-	}
+	// "MiMC model should generate hash after 5 rounds with non-power-of-2 mod" in {
+	// 	assert(MiMCModel.hashGen(inp, key, MiMCConst.genRoundConst(5), 5, 16) == BigInt(8336))
+	// }
 
 	"MiMC model should generate hash after 10 rounds" in {
-		assert(MiMCModel.hashGen(inp, key, MiMCConst.genRoundConst(10), 10, 65536, 16) == BigInt(1000))
+		assert(MiMCModel.hashGen(inp, key, MiMCConst.genRoundConst(10), 10, 16) == BigInt(1000))
 	}
 }
 
 class MiMCTester extends FreeSpec with ChiselScalatestTester {
 
 	// Tests functionality of MiMC with 2-cycle rounds
-	def doMiMCTest(inp: BigInt, key: BigInt, mod: Int, width: Int, numRounds: Int) {
-		val p = MiMCParams(mod, width, numRounds)
+	def doMiMCTest(inp: BigInt, key: BigInt, width: Int, numRounds: Int) {
+		val p = MiMCParams(width, numRounds)
 		val roundConst = MiMCConst.genRoundConst(numRounds)
 		test(new MiMC(p)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
 			// provide test inputs and start hash generation
@@ -55,23 +55,21 @@ class MiMCTester extends FreeSpec with ChiselScalatestTester {
 				dut.clock.step(2)
 			}
 			dut.io.hash.valid.expect(true.B)
-			val expected = MiMCModel.hashGen(inp, key, roundConst, numRounds, mod, width)
+			val expected = MiMCModel.hashGen(inp, key, roundConst, numRounds, width)
 			dut.io.hash.bits.expect(expected.U)
 		}
 	}
 
 	"MiMC should produce correct hash in 5 rounds with random input and key" in {
-		val width = 16
-		val mod = 65536
+		val width = 32
 		val inp = BigInt(width, new Random())
 		val key = BigInt(2*width, new Random())
-		doMiMCTest(inp, key, mod, width, 5)
+		doMiMCTest(inp, key, width, 5)
 	}
 	"MiMC should produce correct hash in 10 rounds with random input and key" in {
-		val width = 16
-		val mod = 65536
+		val width = 32
 		val inp = BigInt(width, new Random())
 		val key = BigInt(2*width, new Random())
-		doMiMCTest(inp, key, mod, width, 10)
+		doMiMCTest(inp, key, width, 10)
 	}
 }
