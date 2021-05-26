@@ -3,7 +3,13 @@ package mimc
 import chisel3._
 import chisel3.util._
 
-case class MiMCParams(width: Int, numRounds: Int=10) {}
+// container for MiMC parameters:
+// 	width: bitwidth of plaintext input and hash output
+// 	numRounds: the number of times the MiMC round function is applied
+//  multiCycle: allows integration of multi-cycle multipliers
+// 							that require a load cycle for each calculation.
+case class MiMCParams(width: Int, numRounds: Int=10, 
+											multiCycle: Boolean) {}
 
 /* MiMCPacket: container for MiMC input data */
 class MiMCPacket(p: MiMCParams) extends Bundle {
@@ -22,7 +28,7 @@ class MiMCIO(p: MiMCParams) extends Bundle {
 
 /* MiMC FSM states */
 object MiMC {
-	val idle :: mul1 :: mul2 :: Nil = Enum(3)
+	val idle :: load1 :: mul1 :: load2 :: mul2 :: Nil = Enum(5)
 	// idle: hash generator is awaiting valid input
 	// mul1: first multiplication in a round [(sum * sum) % mod]
 	// mul2: second multiplication in a round [(mul1Result * sum) % mod]
@@ -38,7 +44,7 @@ class MiMC(p: MiMCParams) extends Module {
 	// For large numRounds, loading to cReg can be hardware intensive
 	
 	// Modulo multiplier - Can replace with your own module!
-	val mul = Module(new ModMult(p.width))
+	val mul = Module(new Karatsuba(p.width))
 
 	// Modulo multiplier IO
 	val outBits  = mul.io.out.bits
@@ -51,10 +57,9 @@ class MiMC(p: MiMCParams) extends Module {
 
 	// Current FSM state
 	val state = RegInit(MiMC.idle)
-	val mulDone = RegInit(1.B)
 
 	// Current round (counts from 0 until numRounds)
-	val roundCount = RegInit(0.U(log2Ceil(p.numRounds).W))
+	val roundCount = RegInit(0.U(log2Ceil(p.numRounds+1).W))
 
 	def getSum: UInt = {
 		val x = xReg
@@ -63,37 +68,69 @@ class MiMC(p: MiMCParams) extends Module {
 		(x + k + c)
 	}
 
-	when (state === MiMC.idle) {
-		when (io.in.fire) {
-			xReg := io.in.bits.plaintext
-			kReg := io.in.bits.key
-			cReg := io.in.bits.constants
+	if (p.multiCycle) {
+		when (state === MiMC.idle) {
+			when (io.in.fire) {
+				xReg := io.in.bits.plaintext
+				kReg := io.in.bits.key
+				cReg := io.in.bits.constants
+				state := MiMC.load1
+			}
+		} .elsewhen (state === MiMC.load1) {
+			mul.io.in.bits.a := getSum
+			mul.io.in.bits.b := getSum
 			state := MiMC.mul1
-		}
-	} .elsewhen (state === MiMC.mul1) {
-		mul.io.in.bits.a := getSum
-		mul.io.in.bits.b := getSum
-		mulDone := 0.B
+		} .elsewhen (state === MiMC.mul1) {
+			when (outValid) {
+				mul1Result := outBits
+				state := MiMC.load2 
+			}
+		} .elsewhen (state === MiMC.load2) {
+			mul.io.in.bits.a := mul1Result
+			mul.io.in.bits.b := getSum
+			state := MiMC.mul2
+		} .elsewhen (state === MiMC.mul2) {
+			when (outValid) {
+				xReg := outBits
 
-		when (outValid & !mulDone) {
-			mul1Result := outBits 
-			state := MiMC.mul2 
+				val last = roundCount === (p.numRounds-1).U
+				roundCount := Mux(last, 0.U, roundCount + 1.U)
+				state := Mux(last, MiMC.idle, MiMC.load1)
+				printf(p"Round ${roundCount+1.U}: ${Hexadecimal(outBits)} ($outBits)\n")
+			}
 		}
-	} .elsewhen (state === MiMC.mul2) {
-		mul.io.in.bits.a := mul1Result
-		mul.io.in.bits.b := getSum
-		mulDone := 0.B
+		mul.io.in.valid := (state === MiMC.load1) || (state === MiMC.load2)
+	} else {
+		when (state === MiMC.idle) {
+			when (io.in.fire) {
+				xReg := io.in.bits.plaintext
+				kReg := io.in.bits.key
+				cReg := io.in.bits.constants
+				state := MiMC.mul1
+			}
+		} .elsewhen (state === MiMC.mul1) {
+			mul.io.in.bits.a := getSum
+			mul.io.in.bits.b := getSum
 
-		when (outValid & !mulDone) {
-			xReg := outBits
+			when (outValid) {
+				mul1Result := outBits
+				state := MiMC.load2 
+			}
+		} .elsewhen (state === MiMC.mul2) {
+			mul.io.in.bits.a := mul1Result
+			mul.io.in.bits.b := getSum
 
-			val last = roundCount === (p.numRounds-1).U
-			roundCount := Mux(last, 0.U, roundCount + 1.U)
-			state := Mux(last, MiMC.idle, MiMC.mul1)
-			printf(p"Round ${roundCount+1.U}: ${Hexadecimal(outBits)} ($outBits)\n")
+			when (outValid) {
+				xReg := outBits
+
+				val last = roundCount === (p.numRounds-1).U
+				roundCount := Mux(last, 0.U, roundCount + 1.U)
+				state := Mux(last, MiMC.idle, MiMC.mul1)
+				printf(p"Round ${roundCount+1.U}: ${Hexadecimal(outBits)} ($outBits)\n")
+			}
 		}
+		mul.io.in.valid := 1.B
 	}
-	mul.io.in.valid := (state === MiMC.mul1 || state === MiMC.mul2) && !outValid
 
 	// Output and Decoupled logic
 	io.hash.bits := xReg

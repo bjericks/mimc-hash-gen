@@ -99,6 +99,6 @@ class Karatsuba(width: Int) extends Module {
   io.out.valid := subValid
   io.in.ready := subValid
   // subMults.zipWithIndex.foreach { case(m, i) =>
-	// 	printf(p"Mult($i): ${m.io.out.valid}\n")
+	// 	 printf(p"Mult($i): ${m.io.out.valid}\n")
 	// }
 }

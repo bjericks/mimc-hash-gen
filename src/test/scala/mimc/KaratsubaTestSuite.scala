@@ -17,12 +17,13 @@ class KaratsubaTester extends FreeSpec with ChiselScalatestTester {
 				val rA = BigInt(width, new Random())
 				val rB = BigInt(width, new Random())
 				println(s"Testing $rA * $rB")
+				// load in the test inputs
 				dut.io.in.bits.a.poke(rA.U)
 				dut.io.in.bits.b.poke(rB.U)
 				dut.io.in.valid.poke(1.B)
 				dut.clock.step()
 				dut.io.in.valid.poke(0.B)
-				for(i <- 0 until (width/2 + 2)) {
+				for(i <- 0 until (width/2 + 2)) { // worst case calculation time
 					dut.clock.step()
 				}
 				val expected = rA * rB & trunc
@@ -32,24 +33,6 @@ class KaratsubaTester extends FreeSpec with ChiselScalatestTester {
 			}
 		}
 	}
-
-	// "Karatsuba should multiply selected 8-bit integers" in {
-	// 	test(new Karatsuba(8)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-	// 		dut.io.in.bits.a.poke(12.U)
-	// 		dut.io.in.bits.b.poke(11.U)
-	// 		dut.io.out.bits.expect(132.U)
-	// 		dut.io.out.valid.expect(1.B)
-	// 	}
-	// }
-
-	// "Karatsuba should multiply selected 16-bit integers" in {
-	// 	test(new Karatsuba(8)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-	// 		dut.io.in.bits.a.poke(32767.U)
-	// 		dut.io.in.bits.b.poke(2.U)
-	// 		dut.io.out.bits.expect(65534.U)
-	// 		dut.io.out.valid.expect(1.B)
-	// 	}
-	// }
 
 	"Karatsuba should multiply random 8-bit integers" in {
 		doRandomKaratsubaTest(8, 10)

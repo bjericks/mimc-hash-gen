@@ -36,10 +36,12 @@ class MiMCModelTester extends FreeSpec with ChiselScalatestTester {
 }
 
 class MiMCTester extends FreeSpec with ChiselScalatestTester {
+	
+	val multiCycle = true // CHANGE ACCORDING TO INTERNAL MULTIPLIER
 
-	// Tests functionality of MiMC with 2-cycle rounds
-	def doMiMCTest(inp: BigInt, key: BigInt, width: Int, numRounds: Int) {
-		val p = MiMCParams(width, numRounds)
+	// Tests functionality of MiMC with 2-cycle rounds (for single-cycle multipliers)
+	def doMiMC_SCTest(inp: BigInt, key: BigInt, width: Int, numRounds: Int): Boolean = {
+		val p = MiMCParams(width, numRounds, false)
 		val roundConst = MiMCConst.genRoundConst(numRounds)
 		test(new MiMC(p)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
 			// provide test inputs and start hash generation
@@ -48,8 +50,9 @@ class MiMCTester extends FreeSpec with ChiselScalatestTester {
 			dut.io.in.bits.plaintext.poke(inp.U)
 			dut.io.in.bits.key.poke(key.U)
 			for (i <- 0 until numRounds) { dut.io.in.bits.constants(i).poke(roundConst(i).U) }
-			dut.clock.step()
+			dut.clock.step() // 1 cycle delay to load test inputs into generator
 
+			// full hash generation should complete in 2*numRounds cycles
 			for (i <- 0 until numRounds) {
 				dut.io.hash.valid.expect(false.B)
 				dut.clock.step(2)
@@ -58,18 +61,53 @@ class MiMCTester extends FreeSpec with ChiselScalatestTester {
 			val expected = MiMCModel.hashGen(inp, key, roundConst, numRounds, width)
 			dut.io.hash.bits.expect(expected.U)
 		}
+		true
+	}
+
+	// Tests functionality of MiMC with included Karatsuba multiplier (for multi-cycle multipliers)
+	def doMiMC_KMTest(inp: BigInt, key: BigInt, width: Int, numRounds: Int): Boolean = {
+		val p = MiMCParams(width, numRounds, true)
+		val roundConst = MiMCConst.genRoundConst(numRounds)
+		test(new MiMC(p)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+			dut.io.in.ready.expect(true.B)
+
+			dut.io.in.valid.poke(true.B)
+			dut.io.in.bits.plaintext.poke(inp.U)
+			dut.io.in.bits.key.poke(key.U)
+			for (i <- 0 until numRounds) { dut.io.in.bits.constants(i).poke(roundConst(i).U) }
+			dut.clock.step() // 1 cycle delay to load test inputs into generator
+			dut.io.in.valid.poke(false.B)
+
+			// Worst case calculation time:
+			// A. 1 cycle loading multiplication arguments
+			// B. width/2 + 2 cycles to calculate valid output (according to Karatsuba Test)
+			// 2 multiplications per round over numRounds rounds = 2*numRounds*(A+B)
+			dut.clock.step(2*numRounds*(width/2 + 4)) // this is worse than the worst case for sure
+
+			println(s"hashGen done, hash = ${dut.io.hash.bits.peek}")
+			dut.io.hash.valid.expect(true.B)
+			val expected = MiMCModel.hashGen(inp, key, roundConst, numRounds, width)
+			dut.io.hash.bits.expect(expected.U)
+		}
+		true
 	}
 
 	"MiMC should produce correct hash in 5 rounds with random input and key" in {
-		val width = 32
+		val width = 128
 		val inp = BigInt(width, new Random())
 		val key = BigInt(2*width, new Random())
-		doMiMCTest(inp, key, width, 5)
+		if (multiCycle)
+			doMiMC_KMTest(inp, key, width, 5)
+		else
+			doMiMC_SCTest(inp, key, width, 5)
 	}
 	"MiMC should produce correct hash in 10 rounds with random input and key" in {
 		val width = 32
 		val inp = BigInt(width, new Random())
 		val key = BigInt(2*width, new Random())
-		doMiMCTest(inp, key, width, 10)
+		if (multiCycle)
+			doMiMC_KMTest(inp, key, width, 10)
+		else
+			doMiMC_SCTest(inp, key, width, 10)
 	}
 }
