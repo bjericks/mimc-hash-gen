@@ -36,14 +36,12 @@ class MiMCModelTester extends FreeSpec with ChiselScalatestTester {
 }
 
 class MiMCTester extends FreeSpec with ChiselScalatestTester {
-	
-	val multiCycle = true // CHANGE ACCORDING TO INTERNAL MULTIPLIER
 
 	// Tests functionality of MiMC with 2-cycle rounds (for single-cycle multipliers)
 	def doMiMC_SCTest(inp: BigInt, key: BigInt, width: Int, numRounds: Int): Boolean = {
-		val p = MiMCParams(width, numRounds, false)
+		val p = MiMCParams(width, numRounds)
 		val roundConst = MiMCConst.genRoundConst(numRounds)
-		test(new MiMC(p)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+		test(new MiMCSingleCycle(p)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
 			// provide test inputs and start hash generation
 			dut.io.in.valid.poke(true.B)
 			dut.io.in.ready.expect(true.B)
@@ -51,6 +49,7 @@ class MiMCTester extends FreeSpec with ChiselScalatestTester {
 			dut.io.in.bits.key.poke(key.U)
 			for (i <- 0 until numRounds) { dut.io.in.bits.constants(i).poke(roundConst(i).U) }
 			dut.clock.step() // 1 cycle delay to load test inputs into generator
+			dut.io.in.valid.poke(false.B)
 
 			// full hash generation should complete in 2*numRounds cycles
 			for (i <- 0 until numRounds) {
@@ -66,9 +65,9 @@ class MiMCTester extends FreeSpec with ChiselScalatestTester {
 
 	// Tests functionality of MiMC with included Karatsuba multiplier (for multi-cycle multipliers)
 	def doMiMC_KMTest(inp: BigInt, key: BigInt, width: Int, numRounds: Int): Boolean = {
-		val p = MiMCParams(width, numRounds, true)
+		val p = MiMCParams(width, numRounds)
 		val roundConst = MiMCConst.genRoundConst(numRounds)
-		test(new MiMC(p)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+		test(new MiMCMultiCycle(p)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
 			dut.io.in.ready.expect(true.B)
 
 			dut.io.in.valid.poke(true.B)
@@ -92,22 +91,27 @@ class MiMCTester extends FreeSpec with ChiselScalatestTester {
 		true
 	}
 
-	"MiMC should produce correct hash in 5 rounds with random input and key" in {
-		val width = 128
-		val inp = BigInt(width, new Random())
-		val key = BigInt(2*width, new Random())
-		if (multiCycle)
-			doMiMC_KMTest(inp, key, width, 5)
-		else
-			doMiMC_SCTest(inp, key, width, 5)
-	}
-	"MiMC should produce correct hash in 10 rounds with random input and key" in {
+	"MiMCSingleCycle should produce correct hash in 5 rounds with random input and key" in {
 		val width = 32
 		val inp = BigInt(width, new Random())
 		val key = BigInt(2*width, new Random())
-		if (multiCycle)
-			doMiMC_KMTest(inp, key, width, 10)
-		else
-			doMiMC_SCTest(inp, key, width, 10)
+		doMiMC_SCTest(inp, key, width, 5)
 	}
+	"MiMCSingleCycle should produce correct hash in 10 rounds with random input and key" in {
+		val width = 32
+		val inp = BigInt(width, new Random())
+		val key = BigInt(2*width, new Random())
+		doMiMC_SCTest(inp, key, width, 10)
+	}
+	"MiMCMultiCycle should produce correct hash in 5 rounds with random input and key" in {
+		val width = 32
+		val inp = BigInt(width, new Random())
+		val key = BigInt(2*width, new Random())
+		doMiMC_KMTest(inp, key, width, 5)
+	}
+	"MiMCMultiCycle should produce correct hash in 10 rounds with random input and key" in {
+		val width = 32
+		val inp = BigInt(width, new Random())
+		val key = BigInt(2*width, new Random())
+		doMiMC_KMTest(inp, key, width, 10)	}
 }

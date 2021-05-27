@@ -8,8 +8,7 @@ import chisel3.util._
 // 	numRounds: the number of times the MiMC round function is applied
 //  multiCycle: allows integration of multi-cycle multipliers
 // 							that require a load cycle for each calculation.
-case class MiMCParams(width: Int, numRounds: Int=10, 
-											multiCycle: Boolean) {}
+case class MiMCParams(width: Int, numRounds: Int=10) {}
 
 /* MiMCPacket: container for MiMC input data */
 class MiMCPacket(p: MiMCParams) extends Bundle {
@@ -34,23 +33,18 @@ object MiMC {
 	// mul2: second multiplication in a round [(mul1Result * sum) % mod]
 }
 
-class MiMC(p: MiMCParams) extends Module {
+/* Shell for MiMC hash generation 
+ * Includes all stateful elements of the generator
+ * and some helper functions
+*/
+abstract class MiMC(p: MiMCParams) extends Module {
 	val io = IO(new MiMCIO(p))
 
 	// Input storage registers
 	val xReg = RegInit(0.U(p.width.W))
 	val kReg = RegInit(0.U((2*p.width).W))
 	val cReg = Reg(Vec(p.numRounds, UInt(p.width.W)))
-	// For large numRounds, loading to cReg can be hardware intensive
-	
-	// Modulo multiplier - Can replace with your own module!
-	val mul = Module(new Karatsuba(p.width))
-
-	// Modulo multiplier IO
-	val outBits  = mul.io.out.bits
-	val outValid = mul.io.out.valid
-	mul.io.in.bits.a := 0.U
-	mul.io.in.bits.b := 0.U
+	// Note: for large numRounds, loading to cReg can be hardware intensive
 
 	// Holds intermediate result of round function multiplication
 	val mul1Result = RegInit(0.U(p.width.W))
@@ -68,7 +62,69 @@ class MiMC(p: MiMCParams) extends Module {
 		(x + k + c)
 	}
 
-	if (p.multiCycle) {
+	// Build function is a placeholder for FSM logic and multiplier integration
+	// Overridden in MiMCSingleCycle and MiMCMultiCycle
+	def build
+	build
+
+	// Output and Decoupled logic is the same for all submodules of MiMC
+	io.hash.bits := xReg
+	io.hash.valid := (state === MiMC.idle)
+	io.in.ready := (state === MiMC.idle)
+}
+
+class MiMCSingleCycle(p: MiMCParams) extends MiMC(p) {
+	override def build = {
+		// Single-cycle round function multiplier - Can replace with your own module!
+		val mul = Module(new ModMult(p.width))
+
+		// Modulo multiplier IO
+		val outBits  = mul.io.out.bits
+		val outValid = mul.io.out.valid
+		mul.io.in.bits.a := 0.U
+		mul.io.in.bits.b := 0.U
+
+		when (state === MiMC.idle) {
+			when (io.in.fire) {
+				xReg := io.in.bits.plaintext
+				kReg := io.in.bits.key
+				cReg := io.in.bits.constants
+				state := MiMC.mul1
+			}
+		} .elsewhen (state === MiMC.mul1) {
+			mul.io.in.bits.a := getSum
+			mul.io.in.bits.b := getSum
+
+			when (outValid) {
+				mul1Result := outBits
+				state := MiMC.mul2
+			}
+		} .elsewhen (state === MiMC.mul2) {
+			mul.io.in.bits.a := mul1Result
+			mul.io.in.bits.b := getSum
+
+			when (outValid) {
+				xReg := outBits
+
+				val last = roundCount === (p.numRounds-1).U
+				roundCount := Mux(last, 0.U, roundCount + 1.U)
+				state := Mux(last, MiMC.idle, MiMC.mul1)
+				printf(p"Round ${roundCount+1.U}: ${Hexadecimal(outBits)} ($outBits)\n")
+			}
+		}
+		mul.io.in.valid := 1.B
+	}
+}
+
+class MiMCMultiCycle(p: MiMCParams) extends MiMC(p) {
+	override def build = {
+		// Multi-cycle round function multiplier
+		val mul = Module(new Karatsuba(p.width))
+		val outBits  = mul.io.out.bits
+		val outValid = mul.io.out.valid
+		mul.io.in.bits.a := 0.U
+		mul.io.in.bits.b := 0.U
+
 		when (state === MiMC.idle) {
 			when (io.in.fire) {
 				xReg := io.in.bits.plaintext
@@ -100,40 +156,5 @@ class MiMC(p: MiMCParams) extends Module {
 			}
 		}
 		mul.io.in.valid := (state === MiMC.load1) || (state === MiMC.load2)
-	} else {
-		when (state === MiMC.idle) {
-			when (io.in.fire) {
-				xReg := io.in.bits.plaintext
-				kReg := io.in.bits.key
-				cReg := io.in.bits.constants
-				state := MiMC.mul1
-			}
-		} .elsewhen (state === MiMC.mul1) {
-			mul.io.in.bits.a := getSum
-			mul.io.in.bits.b := getSum
-
-			when (outValid) {
-				mul1Result := outBits
-				state := MiMC.load2 
-			}
-		} .elsewhen (state === MiMC.mul2) {
-			mul.io.in.bits.a := mul1Result
-			mul.io.in.bits.b := getSum
-
-			when (outValid) {
-				xReg := outBits
-
-				val last = roundCount === (p.numRounds-1).U
-				roundCount := Mux(last, 0.U, roundCount + 1.U)
-				state := Mux(last, MiMC.idle, MiMC.mul1)
-				printf(p"Round ${roundCount+1.U}: ${Hexadecimal(outBits)} ($outBits)\n")
-			}
-		}
-		mul.io.in.valid := 1.B
 	}
-
-	// Output and Decoupled logic
-	io.hash.bits := xReg
-	io.hash.valid := (state === MiMC.idle)
-	io.in.ready := (state === MiMC.idle)
 }
