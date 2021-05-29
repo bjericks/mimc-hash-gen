@@ -76,7 +76,7 @@ abstract class MiMC(p: MiMCParams) extends Module {
 class MiMCSingleCycle(p: MiMCParams) extends MiMC(p) {
 	override def build = {
 		// Single-cycle round function multiplier - Can replace with your own module!
-		val mul = Module(new ModMult(p.width))
+		val mul = Module(new KaratsubaSingleCycle(p.width, 2))
 
 		// Modulo multiplier IO
 		val outBits  = mul.io.out.bits
@@ -109,7 +109,7 @@ class MiMCSingleCycle(p: MiMCParams) extends MiMC(p) {
 				val last = roundCount === (p.numRounds-1).U
 				roundCount := Mux(last, 0.U, roundCount + 1.U)
 				state := Mux(last, MiMC.idle, MiMC.mul1)
-				printf(p"Round ${roundCount+1.U}: ${Hexadecimal(outBits)} ($outBits)\n")
+				// printf(p"Round ${roundCount+1.U}: ${Hexadecimal(outBits)} ($outBits)\n")
 			}
 		}
 		mul.io.in.valid := 1.B
@@ -152,7 +152,7 @@ class MiMCMultiCycle(p: MiMCParams) extends MiMC(p) {
 				val last = roundCount === (p.numRounds-1).U
 				roundCount := Mux(last, 0.U, roundCount + 1.U)
 				state := Mux(last, MiMC.idle, MiMC.load1)
-				printf(p"Round ${roundCount+1.U}: ${Hexadecimal(outBits)} ($outBits)\n")
+				// printf(p"Round ${roundCount+1.U}: ${Hexadecimal(outBits)} ($outBits)\n")
 			}
 		}
 		mul.io.in.valid := (state === MiMC.load1) || (state === MiMC.load2)

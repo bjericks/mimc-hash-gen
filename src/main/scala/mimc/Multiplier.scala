@@ -102,3 +102,51 @@ class Karatsuba(width: Int) extends Module {
 	// 	 printf(p"Mult($i): ${m.io.out.valid}\n")
 	// }
 }
+
+class KaratsubaSingleCycle(width: Int, recurse: Int) extends Module {
+	val io = IO(new ModMultIO(width))
+	require(recurse < log2Ceil(width))
+
+	val root = Module(new KaratsubaPartial(width, recurse))
+	root.io.a := 0.U
+	root.io.b := 0.U
+	when(io.in.fire) {
+		root.io.a := io.in.bits.a
+		root.io.b := io.in.bits.b
+	}
+	io.out.bits := root.io.out
+	io.out.valid := 1.B
+	io.in.ready := 1.B
+}
+
+class KaratsubaPartial(width: Int, recurse: Int) extends Module {
+	val io = IO(new Bundle {
+		val a = Input(UInt(width.W))
+		val b = Input(UInt(width.W))
+		val out = Output(UInt((2*width).W))
+	})
+	require(recurse >= 0)
+	if (recurse == 0) {
+		io.out := io.a * io.b
+	} else {
+		// Split arguments into width/2-bit substrings
+		val (a1, a0) = (io.a(width-1, width/2), io.a(width/2 - 1, 0))
+    val (b1, b0) = (io.b(width-1, width/2), io.b(width/2 - 1, 0))
+
+		val subMults = Seq(Module(new KaratsubaPartial(width/2,   recurse-1)),
+											 Module(new KaratsubaPartial(width/2,   recurse-1)),
+											 Module(new KaratsubaPartial(width/2 + 1, recurse-1)))
+
+		val Seq(sub0a, sub1a, sub2a) = subMults.map(_.io.a)
+  	val Seq(sub0b, sub1b, sub2b) = subMults.map(_.io.b)
+  	sub0a := a1; sub0b := b1
+  	sub1a := a0; sub1b := b0
+  	sub2a := a1 +& a0; sub2b := b1 +& b0
+
+  	val subOut = subMults.map(_.io.out)
+
+  	io.out := (subOut(0) << width) +&
+  						((subOut(2) - subOut(1) - subOut(0)) << (width/2)) +&
+  						(subOut(1))
+	}
+}
